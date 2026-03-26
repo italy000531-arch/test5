@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>福岡旅遊地圖 - 修正版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  :root {
+    --eat: #FF6B35;
+    --play: #4ECDC4;
+    --shop: #A855F7;
+    --bg: #0f0f1a;
+    --card: #1a1a2e;
+    --text: #f0f0f0;
+    --sub: #9ca3af;
+    --border: rgba(255,255,255,0.1);
+  }
+
+  body {
+    font-family: 'Noto Sans TC', 'PingFang TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #FF6B35, #4ECDC4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    flex: 1;
+  }
+  .total-badge {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--sub);
+  }
+
+  /* Filter tabs */
+  .filters {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .filter-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--sub);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .filter-btn.active { color: #fff; border-color: transparent; }
+  .filter-btn[data-type="all"].active { background: linear-gradient(135deg,#FF6B35,#A855F7); }
+  .filter-btn[data-type="eat"].active { background: var(--eat); }
+  .filter-btn[data-type="play"].active { background: var(--play); color: #0f0f1a; }
+  .filter-btn[data-type="shop"].active { background: var(--shop); }
+
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #map-container { flex: 1; position: relative; min-height: 0; background: #111; }
+  #map { width: 100%; height: 100%; }
+
+  /* Bottom sheet */
+  .sheet {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-radius: 20px 20px 0 0;
+    border-top: 1px solid var(--border);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    z-index: 200;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+  }
+  .sheet.collapsed { transform: translateY(calc(100% - 72px)); }
+  .sheet.half { transform: translateY(0); }
+
+  .sheet-handle-area {
+    padding: 12px 0 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 8px; }
+  .sheet-title { font-size: 13px; color: var(--sub); padding: 0 16px 6px; width: 100%; display: flex; justify-content: space-between; align-items: center; }
+
+  .list-container { overflow-y: auto; flex: 1; padding: 0 12px 16px; }
+
+  /* Place card */
+  .place-card {
+    display: flex; gap: 12px; padding: 12px; border-radius: 14px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    margin-bottom: 8px; cursor: pointer; transition: 0.2s;
+  }
+  .place-card.selected { border-color: #FF6B35; background: rgba(255,107,53,0.1); }
+  .place-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .icon-eat { background: rgba(255,107,53,0.2); }
+  .icon-play { background: rgba(78,205,196,0.2); }
+  .icon-shop { background: rgba(168,85,247,0.2); }
+
+  /* InfoWindow styling (Google standard) */
+  .iw-content { color: #333; padding: 5px; max-width: 200px; }
+  .iw-name { font-weight: bold; margin-bottom: 5px; color: #1a1a2e; }
+  .iw-desc { font-size: 12px; color: #666; }
+
+  /* Error Overlay */
+  #error-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 15, 26, 0.98); z-index: 1000;
+    display: none; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center;
+  }
+  .error-box { background: #1a1a2e; border: 1px solid #FF6B35; padding: 24px; border-radius: 16px; max-width: 500px; width: 100%; }
+</style>
+</head>
+<body>
+
+<div id="error-overlay">
+  <div class="error-box">
+    <div style="color: #FF6B35; font-size: 18px; font-weight: bold; margin-bottom: 15px;">⚠️ 地圖授權錯誤</div>
+    <div id="error-details" style="font-size: 14px; color: #ccc; margin-bottom: 20px; text-align: left; line-height: 1.6;"></div>
+    <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="background: #FF6B35; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: bold;">前往 Google Cloud 設定</a>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-top">
+    <h1>🗾 福岡旅遊地圖</h1>
+    <span class="total-badge" id="total-count">載入中...</span>
+  </div>
+  <div class="filters">
+    <button class="filter-btn active" data-type="all" onclick="filterPlaces('all')">🗺 全部</button>
+    <button class="filter-btn" data-type="eat" onclick="filterPlaces('eat')">🍜 飲食</button>
+    <button class="filter-btn" data-type="play" onclick="filterPlaces('play')">🎌 景點</button>
+    <button class="filter-btn" data-type="shop" onclick="filterPlaces('shop')">🛍 購物</button>
+  </div>
+</div>
+
+<div class="main">
+  <div id="map-container">
+    <div id="map"></div>
+  </div>
+
+  <div class="sheet collapsed" id="sheet">
+    <div class="sheet-handle-area" onclick="toggleSheet()">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">
+        <span id="list-status">📍 點擊地點查看詳情</span>
+        <span class="sheet-count" id="list-count"></span>
+      </div>
+    </div>
+    <div class="list-container" id="place-list"></div>
+  </div>
+</div>
+
+<script>
+const PLACES = [
+  // === 飲食 (1-16) ===
+  { id: 1, type: 'eat', emoji: '🍜', name: '博多拉麵一條街', desc: 'JR博多城2F，推薦麵屋兼虎、博多一雙', lat: 33.5910, lng: 130.4213 },
+  { id: 2, type: 'eat', emoji: '🥐', name: 'forno del MIGNON 可頌', desc: '博多車站內，現烤酥脆可頌名店', lat: 33.5898, lng: 130.4208 },
+  { id: 3, type: 'eat', emoji: '🍗', name: '努努雞', desc: '「冰的炸雞」不需加熱，口感酥脆鹹甜', lat: 33.5893, lng: 130.4200 },
+  { id: 4, type: 'eat', emoji: '🍞', name: 'Full Full 麵包店', desc: '川端通商店街內，招牌紅豆奶油麵包', lat: 33.5935, lng: 130.4083 },
+  { id: 5, type: 'eat', emoji: '☕', name: 'FUK COFFEE', desc: '機場元素裝潢，招牌布丁必點', lat: 33.5953, lng: 130.3637 },
+  { id: 6, type: 'eat', emoji: '🫕', name: '越後屋', desc: '博多車站內，傳統福岡名物牛腸鍋', lat: 33.5896, lng: 130.4210 },
+  { id: 7, type: 'eat', emoji: '🍱', name: '元祖博多明太重', desc: '招牌明太子鮭魚卵玉子燒飯', lat: 33.5912, lng: 130.4035 },
+  { id: 8, type: 'eat', emoji: '🍢', name: '博多長濱屋台', desc: '關東煮、串燒、拉麵與明太子料理', lat: 33.5948, lng: 130.3795 },
+  { id: 9, type: 'eat', emoji: '🍡', name: '川端通烤麻糬紅豆湯', desc: '現烤麻糬搭配香濃紅豆湯', lat: 33.5940, lng: 130.4075 },
+  { id: 10, type: 'eat', emoji: '🥩', name: 'A5和牛燒肉', desc: '博多運河旁，高CP值和牛午餐', lat: 33.5955, lng: 130.4068 },
+  { id: 11, type: 'eat', emoji: '🍜', name: '一蘭 太宰府店', desc: '合格拉麵！五角形碗筷寓意合格', lat: 33.5213, lng: 130.5340 },
+  { id: 12, type: 'eat', emoji: '🦪', name: '糸島 牡蠣小屋', desc: '冬季限定，現烤新鮮飽滿牡蠣', lat: 33.5560, lng: 130.1940 },
+  { id: 13, type: 'eat', emoji: '🐟', name: '糸島 海鮮丼', desc: '邊吃海鮮丼邊看夫婦岩海景', lat: 33.5550, lng: 130.1920 },
+  { id: 14, type: 'eat', emoji: '🍎', name: 'RINGO 蘋果派', desc: '天神地下街，外皮酥脆卡士達內餡', lat: 33.5900, lng: 130.3990 },
+  { id: 15, type: 'eat', emoji: '🍞', name: 'Full Full 明太子麵包', desc: '福岡必吃！咬下會噴餡', lat: 33.5905, lng: 130.3985 },
+  { id: 16, type: 'eat', emoji: '🥩', name: '利久牛舌', desc: '連鎖牛舌名店，品質穩定Q彈', lat: 33.5894, lng: 130.4205 },
+
+  // === 景點 (17-28) ===
+  { id: 17, type: 'play', emoji: '⛩', name: '東長寺', desc: '10公尺高木造福岡大佛 + 五重塔', lat: 33.5949, lng: 130.4143 },
+  { id: 18, type: 'play', emoji: '⛩', name: '櫛田神社', desc: '福岡守護神，巨型博多山笠展示', lat: 33.5929, lng: 130.4104 },
+  { id: 19, type: 'play', emoji: '🗼', name: '福岡塔', desc: '俯瞰福岡夜景之首選', lat: 33.5932, lng: 130.3515 },
+  { id: 20, type: 'play', emoji: '🏖', name: '百道濱海濱公園', desc: '沙灘 + 海上歐式婚禮教堂', lat: 33.5945, lng: 130.3512 },
+  { id: 21, type: 'play', emoji: '🌊', name: '中洲屋台街', desc: '福岡著名小吃攤聚集地', lat: 33.5899, lng: 130.4089 },
+  { id: 22, type: 'play', emoji: '🌿', name: '大濠公園', desc: '超大城市公園，湖景步道', lat: 33.5862, lng: 130.3764 },
+  { id: 23, type: 'play', emoji: '🌺', name: '海之中道公園', desc: '大型公園，四季花卉繽紛', lat: 33.6642, lng: 130.3615 },
+  { id: 24, type: 'play', emoji: '🍡', name: '太宰府天滿宮', desc: '求學業考試靈驗神社', lat: 33.5213, lng: 130.5348 },
+  { id: 25, type: 'play', emoji: '⛩', name: '竈門神社', desc: '鬼滅之刃聖地！求姻緣幸福', lat: 33.5288, lng: 130.5525 },
+  { id: 26, type: 'play', emoji: '🌊', name: '糸島 夫婦岩', desc: '海上巨岩景觀，適合夕陽', lat: 33.6391, lng: 130.1983 },
+  { id: 27, type: 'play', emoji: '🏯', name: '小倉城', desc: '城堡外觀壯觀，互動展覽豐富', lat: 33.8844, lng: 130.8742 },
+  { id: 28, type: 'play', emoji: '🎠', name: '麵包超人博物館', desc: '福岡親子景點最佳選擇', lat: 33.5951, lng: 130.4058 },
+
+  // === 購物 (29-31) ===
+  { id: 29, type: 'shop', emoji: '🛍', name: '博多運河城', desc: '大型購物中心，震撼噴泉秀', lat: 33.5896, lng: 130.4109 },
+  { id: 30, type: 'shop', emoji: '🛒', name: '川端通商店街', desc: '福岡最古老商店街，藥妝齊全', lat: 33.5935, lng: 130.4083 },
+  { id: 31, type: 'shop', emoji: '🏢', name: '天神地下街', desc: '九州最大地下街，連接多家百貨', lat: 33.5899, lng: 130.3995 }
+];
+
+let map, markers = [], infoWindow, currentFilter = 'all', sheetState = 'collapsed', selectedCard = null;
+
+// 定義標記圖示與文字框樣式
+function getMarkerSVG(p) {
+  const color = p.type === 'eat' ? '#FF6B35' : p.type === 'play' ? '#4ECDC4' : '#A855F7';
+  // SVG 包含圓圈、Emoji 以及下方的文字框
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: '#FFFFFF',
+    strokeWeight: 2,
+    scale: 12,
+    labelOrigin: new google.maps.Point(0, 2.5) // 將標籤位置下移
+  };
+}
+
+// 處理 Google Maps 的錯誤回報
+window.gm_authFailure = function() {
+    document.getElementById('error-overlay').style.display = 'flex';
+    document.getElementById('error-details').innerHTML = `
+      偵測到 <b>RefererNotAllowedMapError</b> 或 <b>ApiNotActivatedMapError</b>。<br><br>
+      請確認您的 API Key 已啟用 "Maps JavaScript API"，且「網址限制」已設為「無」或包含此網址。
+    `;
+};
+
+function initMap() {
+  const mapEl = document.getElementById('map');
+  
+  map = new google.maps.Map(mapEl, {
+    center: { lat: 33.5900, lng: 130.4100 },
+    zoom: 14,
+    styles: [
+      { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+      { elementType: 'labels.text.fill', stylers: [{ color: '#888' }] },
+      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2d2d4e' }] },
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] }
+    ],
+    disableDefaultUI: true,
+    gestureHandling: 'greedy'
+  });
+
+  infoWindow = new google.maps.InfoWindow();
+
+  PLACES.forEach(p => {
+    const marker = new google.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map,
+      icon: getMarkerSVG(p),
+      // 使用 label 功能製作地名框
+      label: {
+        text: p.name,
+        color: '#FFFFFF',
+        fontSize: '11px',
+        fontWeight: 'bold',
+        className: 'marker-label' // 在 JS 外動態注入樣式或透過 class 控制
+      },
+      data: p
+    });
+
+    marker.addListener('click', () => {
+      focusPlace(p.id, marker);
+    });
+
+    markers.push(marker);
+  });
+
+  // 動態注入 Label 的 CSS (為了美化 Marker 下方的字體框)
+  const style = document.createElement('style');
+  style.innerHTML = `
+    .marker-label {
+      background: rgba(0,0,0,0.7);
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.2);
+      white-space: nowrap;
+      margin-top: 10px;
+    }
+  `;
+  document.head.appendChild(style);
+
+  filterPlaces('all');
+}
+
+function filterPlaces(type) {
+  currentFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+
+  const filtered = type === 'all' ? PLACES : PLACES.filter(p => p.type === type);
+  
+  markers.forEach(m => {
+    m.setVisible(type === 'all' || m.data.type === type);
+  });
+
+  renderList(filtered);
+  document.getElementById('total-count').textContent = `${filtered.length} 個地點`;
+}
+
+function renderList(places) {
+  const list = document.getElementById('place-list');
+  list.innerHTML = places.map(p => `
+    <div class="place-card" id="card-${p.id}" onclick="focusPlace(${p.id})">
+      <div class="place-icon icon-${p.type}">${p.emoji}</div>
+      <div class="place-info">
+        <div style="font-weight:bold; font-size:14px; margin-bottom:4px;">${p.name}</div>
+        <div style="font-size:12px; color:#9ca3af; line-height:1.4;">${p.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function focusPlace(id, marker = null) {
+  const p = PLACES.find(x => x.id === id);
+  if (!p) return;
+
+  map.panTo({ lat: p.lat, lng: p.lng });
+  map.setZoom(16);
+
+  const targetMarker = marker || markers.find(m => m.data.id === id);
+  if (targetMarker) {
+    infoWindow.setContent(`
+      <div class="iw-content">
+        <div class="iw-name">${p.emoji} ${p.name}</div>
+        <div class="iw-desc">${p.desc}</div>
+      </div>
+    `);
+    infoWindow.open(map, targetMarker);
+  }
+
+  if (selectedCard) selectedCard.classList.remove('selected');
+  const card = document.getElementById(`card-${id}`);
+  if (card) {
+    card.classList.add('selected');
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    selectedCard = card;
+  }
+}
+
+function toggleSheet() {
+  const sheet = document.getElementById('sheet');
+  sheetState = sheetState === 'collapsed' ? 'half' : 'collapsed';
+  sheet.className = `sheet ${sheetState}`;
+}
+</script>
+
+<script async defer
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC5wI9c8sLbHFZgn56US79i46l92y99fIQ&callback=initMap&language=zh-TW"
+  onerror="gm_authFailure()">
+</script>
+
+</body>
+</html>
